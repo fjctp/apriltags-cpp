@@ -281,6 +281,35 @@ int main(int argc, char** argv) {
 
           }
 
+          // Start determining orientation
+          cv::Mat rotMat, ProjMat, CamMat, transVec,
+            rotMatX, rotMatY, rotMatZ;
+          cv::Vec3d eulerAngles;
+
+          cv::Rodrigues(r, rotMat);
+          ProjMat = cv::Mat::zeros(3, 4, CV_64FC1);
+          for (int i=0;i<3;i++) {
+            for (int j=0;j<3;j++) {
+              ProjMat.at<double>(i,j) = rotMat.at<double>(i,j);
+            }
+          }
+          
+          cv::decomposeProjectionMatrix(ProjMat,
+                                        CamMat,
+                                        rotMat,
+                                        transVec,
+                                        rotMatX,
+                                        rotMatY,
+                                        rotMatZ,
+                                        eulerAngles);
+
+          std::cout << "roll, pitch, yaw: " << 
+            eulerAngles[2] << ", " <<
+            eulerAngles[0] << ", " <<
+            eulerAngles[1] << ", " <<
+            std::endl;
+          // End determining orientation
+
           cv::projectPoints(srcmat, r, t, Kmat, distCoeffs, dstmat);
 
           for (int j=0; j<nedges; ++j) {
