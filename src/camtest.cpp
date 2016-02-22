@@ -31,7 +31,14 @@ typedef struct CamTestOptions {
       tag_size(0.1905),
       frame_width(0),
       frame_height(0),
-      mirror_display(true)
+      mirror_display(true),
+      opticalCenterX(-1),
+      opticalCenterY(-1),
+      k1(0),
+      k2(0),
+      k3(0),
+      p1(0),
+      p2(0)
   {
   }
   TagDetectorParams params;
@@ -43,6 +50,13 @@ typedef struct CamTestOptions {
   int frame_width;
   int frame_height;
   bool mirror_display;
+  double opticalCenterX;
+  double opticalCenterY;
+  double k1;
+  double k2;
+  double k3;
+  double p1;
+  double p2;
 } CamTestOptions;
 
 
@@ -72,7 +86,14 @@ Run a tool to test tag detection. Options:\n\
  -z SIZE         Set the tag size in meters (default %f)\n\
  -W WIDTH        Set the camera image width in pixels\n\
  -H HEIGHT       Set the camera image height in pixels\n\
- -M              Toggle display mirroring\n",
+ -M              Toggle display mirroring\n\
+ -x              Optical center in x\n\
+ -y              Optical center in y\n\
+ -1              distortion coefficient, k1\n\
+ -2              distortion coefficient, k2\n\
+ -3              distortion coefficient, k3\n\
+ -p              distortion coefficient, p1\n\
+ -q              distortion coefficient, p2\n",
           tool_name,
           p.sigma,
           p.segSigma,
@@ -97,7 +118,7 @@ Run a tool to test tag detection. Options:\n\
 
 CamTestOptions parse_options(int argc, char** argv) {
   CamTestOptions opts;
-  const char* options_str = "hDS:s:a:m:V:N:brnf:e:d:F:z:W:H:M";
+  const char* options_str = "hDS:s:a:m:V:N:brnf:e:d:F:z:W:H:Mx:y:1:2:3:p:q";
   int c;
   while ((c = getopt(argc, argv, options_str)) != -1) {
     switch (c) {
@@ -121,6 +142,13 @@ CamTestOptions parse_options(int argc, char** argv) {
       case 'W': opts.frame_width = atoi(optarg); break;
       case 'H': opts.frame_height = atoi(optarg); break;
       case 'M': opts.mirror_display = !opts.mirror_display; break;
+      case 'x': opts.opticalCenterX = atof(optarg); break;
+      case 'y': opts.opticalCenterY = atof(optarg); break;
+      case '1': opts.k1 = atof(optarg); break;
+      case '2': opts.k2 = atof(optarg); break;
+      case '3': opts.k3 = atof(optarg); break;
+      case 'p': opts.p1 = atof(optarg); break;
+      case 'q': opts.p2 = atof(optarg); break;
       default:
         fprintf(stderr, "\n");
         print_usage(argv[0], stderr);
@@ -153,15 +181,15 @@ int main(int argc, char** argv) {
     // Use uvcdynctrl to figure this out dynamically at some point?
     vc.set(CV_CAP_PROP_FRAME_WIDTH, opts.frame_width);
     vc.set(CV_CAP_PROP_FRAME_HEIGHT, opts.frame_height);
-    
-
   }
-
+  
+  vc.set(CV_CAP_PROP_FPS, 25);
+  //vc.set(CV_CAP_PROP_FOURCC, "");
   std::cout << "Set camera to resolution: "
             << vc.get(CV_CAP_PROP_FRAME_WIDTH) << "x"
             << vc.get(CV_CAP_PROP_FRAME_HEIGHT) << "\n";
 
-  cv::Mat frame;
+  cv::Mat distortframe, frame;
   cv::Point2d opticalCenter;
 
   vc >> frame;
@@ -170,8 +198,82 @@ int main(int argc, char** argv) {
     exit(1);
   }
 
-  opticalCenter.x = frame.cols * 0.5;
-  opticalCenter.y = frame.rows * 0.5;
+  //////////////////////////////////////////////////////////////////////////////////////
+  // start camera characteristic
+  if(opts.opticalCenterX!=-1)
+    opticalCenter.x = opts.opticalCenterX;
+  else
+    opticalCenter.x = frame.cols * 0.5;
+  if(opts.opticalCenterY!=-1)
+    opticalCenter.y = opts.opticalCenterY;
+  else
+    opticalCenter.y = frame.rows * 0.5;
+
+  double f = opts.focal_length;
+  double K[9] = {
+    f, 0, opticalCenter.x,
+    0, f, opticalCenter.y,
+    0, 0, 1
+  };
+  cv::Mat_<double> Kmat(3, 3, K);
+
+  //cv::Mat_<double>      distCoeffs = cv::Mat_<double>::zeros(4,1);
+  double D[5] = {
+    opts.k1, opts.k2, opts.p1, opts.p2, opts.k3
+  };
+  cv::Mat_<double> distCoeffs(5, 1, D);
+
+  cv::Mat map1, map2;
+  cv::Size imageSize(frame.cols, frame.rows);
+  cv::initUndistortRectifyMap(Kmat, distCoeffs, cv::Mat(),
+                              getOptimalNewCameraMatrix(Kmat, distCoeffs, imageSize, 1, imageSize, 0),
+                              imageSize, CV_32FC1, map1, map2);
+  // end camera characteristic
+  //////////////////////////////////////////////////////////////////////////////////////
+
+  //////////////////////////////////////////////////////////////////////////////////////
+  // start box
+  double s = opts.tag_size;
+  double ss = 0.5*s;
+  double sz = s;
+
+  enum { npoints = 8, nedges = 12 };
+
+  cv::Point3d src[npoints] = {
+    cv::Point3d(-ss, -ss, 0),
+    cv::Point3d( ss, -ss, 0),
+    cv::Point3d( ss,  ss, 0),
+    cv::Point3d(-ss,  ss, 0),
+    cv::Point3d(-ss, -ss, sz),
+    cv::Point3d( ss, -ss, sz),
+    cv::Point3d( ss,  ss, sz),
+    cv::Point3d(-ss,  ss, sz),
+  };
+
+  int edges[nedges][2] = {
+
+    { 0, 1 },
+    { 1, 2 },
+    { 2, 3 },
+    { 3, 0 },
+
+    { 4, 5 },
+    { 5, 6 },
+    { 6, 7 },
+    { 7, 4 },
+
+    { 0, 4 },
+    { 1, 5 },
+    { 2, 6 },
+    { 3, 7 }
+
+  };
+
+  cv::Point2d dst[npoints];
+  cv::Mat_<cv::Point3d> srcmat(npoints, 1, src);
+  cv::Mat_<cv::Point2d> dstmat(npoints, 1, dst);
+  // end box
+  //////////////////////////////////////////////////////////////////////////////////////
 
   std::string win = "Cam tag test";
 
@@ -184,9 +286,14 @@ int main(int argc, char** argv) {
   
   while (1) {
 
-    vc >> frame;
-    if (frame.empty()) { break; }
+    vc >> distortframe;
+    if (distortframe.empty()) { break; }
 
+    // apply mapping
+    cv::remap(distortframe, frame, map1, map2, cv::INTER_LINEAR);
+    //frame = distortframe;
+
+    // find tags
     detector.process(frame, opticalCenter, detections);
 
     cv::Mat show;
@@ -199,59 +306,6 @@ int main(int argc, char** argv) {
       //show = family.superimposeDetections(frame, detections);
       show = frame;
 
-      double s = opts.tag_size;
-      double ss = 0.5*s;
-      double sz = s;
-
-      enum { npoints = 8, nedges = 12 };
-
-      cv::Point3d src[npoints] = {
-        cv::Point3d(-ss, -ss, 0),
-        cv::Point3d( ss, -ss, 0),
-        cv::Point3d( ss,  ss, 0),
-        cv::Point3d(-ss,  ss, 0),
-        cv::Point3d(-ss, -ss, sz),
-        cv::Point3d( ss, -ss, sz),
-        cv::Point3d( ss,  ss, sz),
-        cv::Point3d(-ss,  ss, sz),
-      };
-
-      int edges[nedges][2] = {
-
-        { 0, 1 },
-        { 1, 2 },
-        { 2, 3 },
-        { 3, 0 },
-
-        { 4, 5 },
-        { 5, 6 },
-        { 6, 7 },
-        { 7, 4 },
-
-        { 0, 4 },
-        { 1, 5 },
-        { 2, 6 },
-        { 3, 7 }
-
-      };
-
-      cv::Point2d dst[npoints];
-
-      double f = opts.focal_length;
-
-      double K[9] = {
-        f, 0, opticalCenter.x,
-        0, f, opticalCenter.y,
-        0, 0, 1
-      };
-
-      cv::Mat_<cv::Point3d> srcmat(npoints, 1, src);
-      cv::Mat_<cv::Point2d> dstmat(npoints, 1, dst);
-
-      cv::Mat_<double>      Kmat(3, 3, K);
-
-      cv::Mat_<double>      distCoeffs = cv::Mat_<double>::zeros(4,1);
-
       for (size_t i=0; i<detections.size(); ++i) {
 
         //for (cvPose=0; cvPose<2; ++cvPose) {
@@ -262,14 +316,14 @@ int main(int argc, char** argv) {
           if (cvPose) {
 
 
-            CameraUtil::homographyToPoseCV(f, f, s, 
+            CameraUtil::homographyToPoseCV(f, f, s,
                                            detections[i].homography,
                                            r, t);
 
           } else {
 
-            cv::Mat_<double> M = 
-              CameraUtil::homographyToPose(f, f, s, 
+            cv::Mat_<double> M =
+              CameraUtil::homographyToPose(f, f, s,
                                            detections[i].homography,
                                            false);
 
@@ -288,9 +342,9 @@ int main(int argc, char** argv) {
 
           cv::Rodrigues(r, rotMat);
           ProjMat = cv::Mat::zeros(3, 4, CV_64FC1);
-          for (int i=0;i<3;i++) {
-            for (int j=0;j<3;j++) {
-              ProjMat.at<double>(i,j) = rotMat.at<double>(i,j);
+          for (int m=0;m<3;m++) {
+            for (int n=0;n<3;n++) {
+              ProjMat.at<double>(m,n) = rotMat.at<double>(m,n);
             }
           }
           
@@ -303,30 +357,42 @@ int main(int argc, char** argv) {
                                         rotMatZ,
                                         eulerAngles);
 
-          std::cout << "roll, pitch, yaw: " << 
-            eulerAngles[2] << ", " <<
-            eulerAngles[0] << ", " <<
-            eulerAngles[1] << ", " <<
-            std::endl;
+          char str[256];
+          sprintf(str, "brpy: %d, %.2f, %.2f, %.2f\n", (int) detections[i].id, eulerAngles[2], eulerAngles[0], eulerAngles[1]);
+          std::cout << str;
+          sprintf(str, "bzxy: %d, %.2f, %.2f, %.2f\n", (int) detections[i].id, t.at<double>(0, 2), t.at<double>(0, 0), t.at<double>(0, 1));
+          std::cout << str;
           // End determining orientation
 
           cv::projectPoints(srcmat, r, t, Kmat, distCoeffs, dstmat);
 
           for (int j=0; j<nedges; ++j) {
-            cv::line(show, 
+            cv::line(show,
                      dstmat(edges[j][0],0),
                      dstmat(edges[j][1],0),
                      cvPose ? CV_RGB(0,255,0) : CV_RGB(255,0,0),
                      1, CV_AA);
           }
-
         }
-
       }
-                                                          
-
     }
 
+    // start drawing a cross at the center
+    double cross_size = show.cols<show.rows?show.cols:show.rows;
+    cross_size /= 4;
+
+    cv::line(show,
+             cv::Point2d(opticalCenterX-cross_size, opticalCenterY),
+             cv::Point2d(opticalCenterX+cross_size, opticalCenterY),
+             CV_RGB(0,255,0),
+             1, CV_AA);
+    cv::line(show,
+             cv::Point2d(opticalCenterX, opticalCenterY-cross_size),
+             cv::Point2d(opticalCenterX, opticalCenterY+cross_size),
+             CV_RGB(0,255,0),
+             1, CV_AA);
+    // end drawing a cross at the center
+    
     if (opts.mirror_display) {
       cv::flip(show, show, 1);
     }
@@ -342,7 +408,7 @@ int main(int argc, char** argv) {
       break;
     }
 
-  }    
+  }
 
   detector.reportTimers();
 
