@@ -382,13 +382,13 @@ int main(int argc, char** argv) {
     cross_size /= 4;
 
     cv::line(show,
-             cv::Point2d(opticalCenterX-cross_size, opticalCenterY),
-             cv::Point2d(opticalCenterX+cross_size, opticalCenterY),
+             cv::Point2d(opticalCenter.x-cross_size, opticalCenter.y),
+             cv::Point2d(opticalCenter.x+cross_size, opticalCenter.y),
              CV_RGB(0,255,0),
              1, CV_AA);
     cv::line(show,
-             cv::Point2d(opticalCenterX, opticalCenterY-cross_size),
-             cv::Point2d(opticalCenterX, opticalCenterY+cross_size),
+             cv::Point2d(opticalCenter.x, opticalCenter.y-cross_size),
+             cv::Point2d(opticalCenter.x, opticalCenter.y+cross_size),
              CV_RGB(0,255,0),
              1, CV_AA);
     // end drawing a cross at the center
