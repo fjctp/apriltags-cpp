@@ -118,7 +118,7 @@ Run a tool to test tag detection. Options:\n\
 
 CamTestOptions parse_options(int argc, char** argv) {
   CamTestOptions opts;
-  const char* options_str = "hDS:s:a:m:V:N:brnf:e:d:F:z:W:H:Mx:y:1:2:3:p:q";
+  const char* options_str = "hDS:s:a:m:V:N:brnf:e:d:F:z:W:H:Mx:y:1:2:3:p:q:";
   int c;
   while ((c = getopt(argc, argv, options_str)) != -1) {
     switch (c) {
