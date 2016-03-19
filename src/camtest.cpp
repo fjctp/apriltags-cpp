@@ -282,7 +282,7 @@ int main(int argc, char** argv) {
   
   TagDetectionArray detections;
 
-  int cvPose = 0;
+  int cvPose = 1;
   
   while (1) {
 
@@ -381,15 +381,21 @@ int main(int argc, char** argv) {
     double cross_size = show.cols<show.rows?show.cols:show.rows;
     cross_size /= 4;
 
+    cv::Scalar cross_color;
+    if(cvPose)
+      cross_color = CV_RGB(255,0,0);
+    else
+      cross_color = CV_RGB(0,255,0);
+    
     cv::line(show,
              cv::Point2d(opticalCenter.x-cross_size, opticalCenter.y),
              cv::Point2d(opticalCenter.x+cross_size, opticalCenter.y),
-             CV_RGB(0,255,0),
+             cross_color,
              1, CV_AA);
     cv::line(show,
              cv::Point2d(opticalCenter.x, opticalCenter.y-cross_size),
              cv::Point2d(opticalCenter.x, opticalCenter.y+cross_size),
-             CV_RGB(0,255,0),
+             cross_color,
              1, CV_AA);
     // end drawing a cross at the center
     
